@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARC 레이더스 퀘스트 트래커</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --line:#2a3038;
+    --text:#e6edf3; --muted:#8b949e; --accent:#f0883e; --accent2:#58a6ff;
+    --on:#3fb950; --chip:#21262d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    display:flex; flex-direction:column; height:100vh; overflow:hidden;
+  }
+  header{
+    padding:14px 20px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:14px; background:var(--panel); flex-shrink:0;
+  }
+  header h1{font-size:17px; font-weight:700; letter-spacing:.3px}
+  header h1 .dim{color:var(--accent); font-weight:800}
+  header .count{font-size:12px; color:var(--muted); margin-left:auto}
+  .layout{display:flex; flex:1; min-height:0}
+  /* sidebar */
+  .side{width:380px; flex-shrink:0; border-right:1px solid var(--line); display:flex; flex-direction:column; background:var(--panel)}
+  .search{padding:14px; border-bottom:1px solid var(--line)}
+  .search input{
+    width:100%; padding:10px 12px; background:var(--bg); border:1px solid var(--line);
+    border-radius:8px; color:var(--text); font-size:14px; outline:none;
+  }
+  .search input:focus{border-color:var(--accent2)}
+  .search .hint{font-size:11px; color:var(--muted); margin-top:7px}
+  .results{flex:1; overflow-y:auto; padding:6px}
+  .empty{padding:30px 18px; text-align:center; color:var(--muted); font-size:13px; line-height:1.7}
+  .qrow{
+    display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:8px;
+    cursor:pointer; border:1px solid transparent;
+  }
+  .qrow:hover{background:var(--panel2)}
+  .qrow .cb{
+    width:18px;height:18px;border:1.5px solid var(--line);border-radius:5px;flex-shrink:0;margin-top:2px;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;transition:.12s;
+  }
+  .qrow.on .cb{background:var(--on);border-color:var(--on)}
+  .qrow .body{flex:1;min-width:0}
+  .qrow .nm{font-size:14px;font-weight:600;line-height:1.35}
+  .qrow .en{font-size:11px;color:var(--muted);margin-top:1px}
+  .qrow .mp{margin-top:5px;display:flex;flex-wrap:wrap;gap:4px}
+  .qrow .tag{font-size:10.5px;background:var(--chip);color:var(--muted);padding:2px 7px;border-radius:20px;white-space:nowrap}
+  .qrow.on .nm{color:var(--on)}
+  /* active section header */
+  .sec{padding:12px 14px 6px;font-size:11px;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;font-weight:700}
+  /* main */
+  .main{flex:1; display:flex; flex-direction:column; min-width:0}
+  .tabs{display:flex; gap:2px; padding:10px 12px 0; border-bottom:1px solid var(--line); overflow-x:auto; flex-shrink:0; background:var(--panel)}
+  .tab{
+    padding:9px 15px; font-size:13px; color:var(--muted); cursor:pointer; white-space:nowrap;
+    border-bottom:2px solid transparent; display:flex; align-items:center; gap:7px;
+  }
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--accent); border-bottom-color:var(--accent); font-weight:600}
+  .tab .b{font-size:11px; background:var(--chip); color:var(--text); border-radius:20px; padding:1px 7px; min-width:18px; text-align:center}
+  .tab.active .b{background:var(--accent); color:#0d1117; font-weight:700}
+  #map{flex:1; background:#000; min-height:0}
+  .mapempty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;text-align:center;line-height:1.8;padding:20px}
+  /* leaflet marker */
+  .qmark{
+    background:var(--accent); width:14px;height:14px;border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg); border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.6);
+  }
+  .leaflet-popup-content-wrapper{background:var(--panel2);color:var(--text);border-radius:8px;border:1px solid var(--line)}
+  .leaflet-popup-tip{background:var(--panel2);border:1px solid var(--line)}
+  .leaflet-popup-content{margin:11px 14px;font-size:13px;line-height:1.5}
+  .leaflet-popup-content b{color:var(--accent);font-size:14px}
+  .leaflet-popup-content .oen{color:var(--muted);font-size:11px;margin-top:3px;display:block}
+  .leaflet-container a.leaflet-popup-close-button{color:var(--muted)}
+  /* scrollbar */
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#30363d;border-radius:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+  footer{
+    flex-shrink:0; padding:9px 20px; border-top:1px solid var(--line);
+    background:var(--panel); color:var(--muted); font-size:11px; line-height:1.6; text-align:center;
+  }
+  footer a{color:var(--accent2); text-decoration:none}
+  footer a:hover{text-decoration:underline}
+  @media(max-width:760px){
+    .layout{flex-direction:column}
+    .side{width:100%;flex:0 0 42%;border-right:none;border-bottom:1px solid var(--line)}
+    .main{flex:1 1 auto;min-height:0}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>ARC <span class="dim">레이더스</span> 퀘스트 트래커</h1>
+  <span class="count" id="hdrcount"></span>
+</header>
+<div class="layout">
+  <aside class="side">
+    <div class="search">
+      <input id="q" type="text" placeholder="퀘스트 검색 (한글·영문·목표)" autocomplete="off">
+      <div class="hint">퀘스트를 검색해 체크하면 진행 중 목록에 추가됩니다</div>
+    </div>
+    <div class="results" id="results"></div>
+  </aside>
+  <main class="main">
+    <div class="tabs" id="tabs"></div>
+    <div id="map"></div>
+    <div class="mapempty" id="mapempty">진행 중인 퀘스트를 체크한 뒤<br>위에서 맵을 선택하세요</div>
+  </main>
+</div>
+<footer>
+  데이터 · 지도 <a href="https://arcraidersmaps.app" target="_blank" rel="noopener">arcraidersmaps.app</a>
+  &nbsp;·&nbsp; 한글 번역 <a href="https://op.gg/ko/arc-raiders" target="_blank" rel="noopener">OP.GG</a>
+  &nbsp;·&nbsp; ARC Raiders는 Embark Studios의 저작물이며, 본 페이지는 영리 목적이 없는 비공식 팬 제작물입니다.
+</footer>
+<script>
+const DATA = {"mapMeta":{"size":8192,"image":2048,"maps":[{"id":"dam","ko":"댐 전장","img":"map_dam.webp"},{"id":"spaceport","ko":"우주 기지","img":"map_spaceport.webp"},{"id":"buried-city","ko":"파묻힌 도시","img":"map_buried-city.webp"},{"id":"blue-gate","ko":"블루 게이트","img":"map_blue-gate.webp"},{"id":"stella-montis","ko":"스텔라 몬티스","img":"map_stella-montis.webp"},{"id":"riven-tides","ko":"리븐 타이즈","img":"map_riven-tides.webp"}]},"quests":[{"id":"a symbol of unification","name_en":"A symbol of Unification","name_ko":"단결의 상징","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4067.5,"y":2130.0,"objective":"Locate the flag at the Formicai Outpost"},{"map":"dam","map_ko":"댐 전장","x":4147.0,"y":2197.0,"objective":"Hoist the flag on the small platform overlooking the Red Lake"}]},{"id":"flickering threat","name_en":"Flickering Threat","name_ko":"점멸하는 위협","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4851.0,"y":5652.0,"objective":"Repair the Generator NOTE: Requires 4 Wires"},{"map":"dam","map_ko":"댐 전장","x":5154.0,"y":5621.5,"objective":"Enable the power via the power switch underneath the stairs"}]},{"id":"celeste's journals","name_en":"Celeste's Journals","name_ko":"셀레스테의 일지","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":2435.5,"y":4000.5,"objective":"Retreive Celeste's Journals from the South Swamp Outpost"},{"map":"dam","map_ko":"댐 전장","x":5861.0,"y":5568.5,"objective":"Retrieve Celeste's Journals from the northern outpost overlooking the Red Lakes"}]},{"id":"the major's footlocker","name_en":"The Major's Footlocker","name_ko":"소령의 풋라커","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":3095.71,"y":5823.9,"objective":"Search for Major Aiva's mementos in the apartments northwest of The Dam."}]},{"id":"a balanced harvest","name_en":"A Balanced Harvest","name_ko":"균형 잡힌 수확","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4310.0,"y":3755.39,"objective":"Search for any traces of the agricultural research project"}]},{"id":"untended garden","name_en":"Untended Garden","name_ko":"버림받은 정원","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":3874.0,"y":5333.0,"objective":"Access the data archive in one of the domes"},{"map":"dam","map_ko":"댐 전장","x":4113.0,"y":5072.42,"objective":"Access the data archive in one of the domes"},{"map":"dam","map_ko":"댐 전장","x":3828.5,"y":5189.44,"objective":"Upload the research data to the computer terminal in any Field Depot. Field Depot's other than this one also work."}]},{"id":"water troubles","name_en":"Water Troubles","name_ko":"물 문제","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4605.0,"y":3626.5,"objective":"Sample the water"},{"map":"dam","map_ko":"댐 전장","x":4761.5,"y":3738.0,"objective":"Locate the Flood Access Tunnel under the Red Lake Berm"}]},{"id":"back on top","name_en":"Back On Top","name_ko":"다시 지상으로","maps":["blue-gate","buried-city","dam","spaceport"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4928.0,"y":6162.0,"objective":"On Dam Battlegrounds, mark the Pattern House"},{"map":"spaceport","map_ko":"우주 기지","x":4291.5,"y":5606.0,"objective":"On Spaceport, mark the South Trench Tower"},{"map":"buried-city","map_ko":"파묻힌 도시","x":5875.0,"y":4826.0,"objective":"On Buried City, mark the building with the mural in the Buried Properties"},{"map":"blue-gate","map_ko":"블루 게이트","x":4430.9,"y":4137.2,"objective":"On The Blue Gate, mark the white lookout tower south of the Warehouse Complex"}]},{"id":"our presence up there","name_en":"Our Presence Up There","name_ko":"지상 위 우리의 존재감","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4841.5,"y":6135.0,"objective":"Find and interact with the Power Switch"},{"map":"dam","map_ko":"댐 전장","x":4840.5,"y":6115.0,"objective":"Complete the antenna installation on the roof"}]},{"id":"greasing her palms","name_en":"Greasing Her Palms","name_ko":"뇌물로 기름칠","maps":["buried-city","dam","spaceport"],"locations":[{"map":"dam","map_ko":"댐 전장","x":3340.0,"y":3979.0,"objective":"On Dam Battlegrounds, visit the Locked Room in the Water Treatment Control building"},{"map":"dam","map_ko":"댐 전장","x":3284.0,"y":3954.5,"objective":"Find a spare Dam Surveillance Key"},{"map":"spaceport","map_ko":"우주 기지","x":4516.0,"y":4129.5,"objective":"On Spaceport, scope out the rocket thrusters outside the Rocket Assembly"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4829.62,"y":4866.91,"objective":"On Buried City, visit the barricaded area on floor 6 of the Space Travel Building"}]},{"id":"medical merchandise","name_en":"Medical Merchandise","name_ko":"의료 물자","maps":["buried-city","dam","spaceport"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4247.0,"y":3689.0,"objective":"On Dam Battlegrounds, search 2 containers in the Research & Administration building's medical room"},{"map":"spaceport","map_ko":"우주 기지","x":3192.0,"y":4691.5,"objective":"On Spaceport, search 2 containers in the Departure Building's exam rooms"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4253.23,"y":5937.38,"objective":"Search 3 containers in the Hospital in Buried City"}]},{"id":"eyes in the sky","name_en":"Eyes In The Sky","name_ko":"상공의 감시자","maps":["buried-city","dam","spaceport"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4630.5,"y":3887.92,"objective":"On Dam Battlegrounds, install a LiDAR Scanner at the top of the Control Tower"},{"map":"spaceport","map_ko":"우주 기지","x":5868.0,"y":3451.39,"objective":"On Spaceport, install a LiDAR Scanner at the Communications Tower"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4973.13,"y":5537.99,"objective":"On Buried City, install a LiDAR Scanner on top of the Galleria sign. NOTE: Bring a snap hook or zipline!"}]},{"id":"what we left behind","name_en":"What We Left Behind","name_ko":"뒤에 남겨진 것들","maps":["dam","spaceport"],"locations":[{"map":"dam","map_ko":"댐 전장","x":2395.0,"y":3999.88,"objective":"On Dam Battlegrounds, search for anything significant in the South Swamp Outpost"},{"map":"spaceport","map_ko":"우주 기지","x":5071.97,"y":3464.2,"objective":""}]},{"id":"broken monument","name_en":"Broken Monument","name_ko":"부서진 기념물","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4134.69,"y":2789.88,"objective":"Search for the old field rations in the Raider camp"},{"map":"dam","map_ko":"댐 전장","x":3905.95,"y":2619.83,"objective":"Search for a compass near the broken-down vehicles"},{"map":"dam","map_ko":"댐 전장","x":4017.14,"y":2690.62,"objective":"Search for the video tape near the cylindrical containers"}]},{"id":"straight record","name_en":"Straight Record","name_ko":"정보 바로잡기","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":3978.89,"y":5865.62,"objective":"Find the old EMP trap"},{"map":"dam","map_ko":"댐 전장","x":3901.82,"y":5988.51,"objective":"Disable the first power switch"},{"map":"dam","map_ko":"댐 전장","x":4058.79,"y":5838.63,"objective":"Disable the second power switch"},{"map":"dam","map_ko":"댐 전장","x":3987.38,"y":5619.39,"objective":"Disable the third power switch"},{"map":"dam","map_ko":"댐 전장","x":3979.5,"y":5874.5,"objective":"Shut down the EMP trap"}]},{"id":"keeping the memory","name_en":"Keeping The Memory","name_ko":"기억의 보존","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4492.5,"y":2794.9,"objective":"Search for the missing helmet"},{"map":"dam","map_ko":"댐 전장","x":4471.0,"y":2802.5,"objective":"Return the helmet to the memorial"}]},{"id":"echoes of victory ridge","name_en":"Echoes Of Victory Ridge","name_ko":"승리의 산등성이에 퍼지는 메아리","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4288.5,"y":6087.87,"objective":"Retrieve the battle plans from the hideout under the broken highway"}]},{"id":"a toxic trail","name_en":"A Toxic Trail","name_ko":"독극물의 자취","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":3082.5,"y":4371.0,"objective":"Search the swamp for traces of the barrel's origins"},{"map":"dam","map_ko":"댐 전장","x":3326.0,"y":4253.0,"objective":"Return to the water intake below the Water Treatment Control building"},{"map":"dam","map_ko":"댐 전장","x":3063.0,"y":4371.0,"objective":"Take a photo of the barrel truck"}]},{"id":"paving the way","name_en":"Paving The Way","name_ko":"길을 닦다","maps":["buried-city","dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":3304.5,"y":3951.0,"objective":"Go to any ENELICA building"},{"map":"dam","map_ko":"댐 전장","x":3325.5,"y":3952.5,"objective":"Search for a notice board with a note from the researcher"},{"map":"buried-city","map_ko":"파묻힌 도시","x":3197.78,"y":3690.85,"objective":"Find the researcher's flat and search for any research data"}]},{"id":"source of contamination","name_en":"Source of Contamination","name_ko":"오염의 근원","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":3307.0,"y":4292.0,"objective":"Investigate any suspicious objects"}]},{"id":"a new type of plant","name_en":"A New type Of Plant","name_ko":"신종 식물","maps":["dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":2572.5,"y":4670.0,"objective":"Search for the new plant near the Baron Husk in the Old Battleground"}]},{"id":"the league","name_en":"The League","name_ko":"리그","maps":["buried-city","dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":2723.0,"y":3074.5,"objective":"On Dam Battlegrounds, photograph the goal by the Water Towers"},{"map":"buried-city","map_ko":"파묻힌 도시","x":2873.12,"y":5555.53,"objective":"On Buried City, photograph the football magazines in any kiosk"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4195.52,"y":4591.08,"objective":"On Buried City, photograph the football magazines in any kiosk"}]},{"id":"a rising tide","name_en":"A Rising Tide","name_ko":"만조","maps":["buried-city","dam"],"locations":[{"map":"dam","map_ko":"댐 전장","x":4772.88,"y":5269.52,"objective":"Search the Controlled Access Zone for any clues about the foreman's reconstruction project"},{"map":"buried-city","map_ko":"파묻힌 도시","x":3029.5,"y":3981.5,"objective":"Access the foreman's digital logbook"}]},{"id":"power out","name_en":"Power Out","name_ko":"정전","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":4589.12,"y":1939.76,"objective":"Find any sign of the missing Engineer"},{"map":"spaceport","map_ko":"우주 기지","x":4553.06,"y":1917.13,"objective":"Install the fuse"}]},{"id":"turnabout","name_en":"Turnabout","name_ko":"전환점","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":4502.5,"y":5819.5,"objective":"Locate and upload the Blackmail Files to Celeste"}]},{"id":"lost in transmission","name_en":"Lost In Transmission","name_ko":"전파, 사라지다","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":4039.5,"y":3827.5,"objective":"Establish a connection from the terminal"}]},{"id":"a lay of the land","name_en":"A Lay Of The Land","name_ko":"지형","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":2135.0,"y":5771.0,"objective":"Find the shipping notes in the foreman's office"},{"map":"spaceport","map_ko":"우주 기지","x":4320.5,"y":3838.4,"objective":"Locate the scanners in the Flight Control office of Control Tower A6"}]},{"id":"switching the supply","name_en":"Switching the Supply","name_ko":"보급품 교체","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":3630.05,"y":4452.54,"objective":"Find and turn the valve in the tunnels under Spaceport"}]},{"id":"prescription of the past","name_en":"Prescription Of The Past","name_ko":"과거의 처방전","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":3244.5,"y":4635.5,"objective":"Search for the records."}]},{"id":"the clean dream","name_en":"The Clean Dream","name_ko":"깨끗한 꿈","maps":["blue-gate","spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":3498.65,"y":4988.28,"objective":"Find and monitor any Filtration System in the tunnels"},{"map":"spaceport","map_ko":"우주 기지","x":3823.3,"y":4299.73,"objective":"Find and monitor any Filtration System in the tunnels"},{"map":"blue-gate","map_ko":"블루 게이트","x":4316.5,"y":3516.0,"objective":"Find and photograph the blueprints in the bunker"},{"map":"blue-gate","map_ko":"블루 게이트","x":4355.5,"y":3620.5,"objective":"Monitor the Purification System in the bunker"}]},{"id":"decipher the data","name_en":"Decipher The Data","name_ko":"데이터 해독","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":4768.0,"y":4811.0,"objective":"Use the Magnetic Decryptor in the Fuel Control Building"}]},{"id":"the stench of corruption","name_en":"The Stench Of Corruption","name_ko":"부패의 악취","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":3108.5,"y":4487.5,"objective":"Search the room for any clues of the saboteur's identity"},{"map":"spaceport","map_ko":"우주 기지","x":3149.5,"y":4410.0,"objective":"Find the staff locker room"},{"map":"spaceport","map_ko":"우주 기지","x":3503.0,"y":4496.0,"objective":"Use the key on any Flushing Terminal to override the bypass protocol"}]},{"id":"deciphering the data","name_en":"Deciphering The Data","name_ko":"데이터 해독","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":3227.0,"y":5167.0,"objective":"Use the Magnetic Decryptor on the top floor of the Arrival Building"}]},{"id":"on the map","name_en":"On The Map","name_ko":"지도에서","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":4719.94,"y":4998.71,"objective":"Head to the antenna near the Fuel Control, and transmit your location"},{"map":"spaceport","map_ko":"우주 기지","x":3255.52,"y":3956.43,"objective":"Head to where the Fuel Lines snapped, and transmit your location"},{"map":"spaceport","map_ko":"우주 기지","x":4842.27,"y":3760.56,"objective":"Transmit your location from the roof of the Container Storage building"},{"map":"spaceport","map_ko":"우주 기지","x":4798.43,"y":3723.79,"objective":"Find the container covered in tarp, and mark it"},{"map":"spaceport","map_ko":"우주 기지","x":4922.88,"y":4102.09,"objective":"Head to the cactus patch in the wall breach, and transmit your location"}]},{"id":"worth your salt","name_en":"Worth Your Salt","name_ko":"짭짤한 소금값","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":5025.5,"y":4787.5,"objective":"Search for the hidden Battery Prototype in a high place"},{"map":"spaceport","map_ko":"우주 기지","x":4958.5,"y":4751.0,"objective":"Bring the Battery Prototype to the Industrial Recharger"},{"map":"spaceport","map_ko":"우주 기지","x":4962.0,"y":4845.0,"objective":"Deliver the Charged Battery to the drop-off point in the corner"}]},{"id":"dust on the wires","name_en":"Dust On The Wires","name_ko":"전선에 쌓인 먼지","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":5519.0,"y":4153.0,"objective":"Visit any Field Depot on the eastern side of the Spaceport"},{"map":"spaceport","map_ko":"우주 기지","x":3572.0,"y":3023.0,"objective":"Interact with the terminal in the old Raider Tower north of the Maintenance Hangar"},{"map":"spaceport","map_ko":"우주 기지","x":3715.5,"y":2549.0,"objective":"Find traces of the scout patrol near the Maintenance Hangar"},{"map":"spaceport","map_ko":"우주 기지","x":3714.0,"y":2498.0,"objective":"Search the remains left by the scouts"}]},{"id":"waking the grid","name_en":"Waking The Grid","name_ko":"그리드 깨우기","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":3352.0,"y":5531.5,"objective":"Activate the security sensors in one of the Guard Towers"},{"map":"spaceport","map_ko":"우주 기지","x":3179.59,"y":4383.38,"objective":"Start the Security Control Center in the Departure Building"},{"map":"spaceport","map_ko":"우주 기지","x":3096.5,"y":5307.5,"objective":"Search for any traces of a security breach in the Arrival Building Data Office"}]},{"id":"a wrench in the works (1/2)","name_en":"A Wrench In the Works (1/2)","name_ko":"작업에 낀 렌치","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":2718.0,"y":4794.5,"objective":"Search the buses near the western gate"}]},{"id":"a wrench in the works (2/2)","name_en":"A Wrench In the Works (2/2)","name_ko":"작업에 낀 렌치","maps":["spaceport"],"locations":[{"map":"spaceport","map_ko":"우주 기지","x":1609.5,"y":5104.0,"objective":"Locate the stash of sabotage supplies hidden at the Water Towers"}]},{"id":"industrial espionage","name_en":"Industrial Espionage","name_ko":"산업 스파이","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":3839.59,"y":6728.29,"objective":"Deliver the Burletta to the rival weapon cache"}]},{"id":"a warm place to rest","name_en":"A Warm Place To Rest","name_ko":"따뜻한 쉼터","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":2843.91,"y":2584.9,"objective":"Locate the Abandoned Highway Camp"},{"map":"buried-city","map_ko":"파묻힌 도시","x":6063.7,"y":4040.49,"objective":"Inspect the grave"}]},{"id":"unexpected initiative","name_en":"Unexpected Initiative","name_ko":"예상치 못한 계획","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":2552.04,"y":2839.97,"objective":"Search for a Moisture Meter on the rooftop of Grandioso Apartments"},{"map":"buried-city","map_ko":"파묻힌 도시","x":3178.59,"y":3719.27,"objective":"You can get on top of this building by jumping on a box with a little bridge from the building right next to it. The water pump is in a little garden house."},{"map":"buried-city","map_ko":"파묻힌 도시","x":2867.0,"y":3946.0,"objective":"Search for a Nutrient Meter in the broken rooftop gardens at Piazza Roma"}]},{"id":"marked for death","name_en":"Marked For Death","name_ko":"죽음의 표식","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":3011.57,"y":6644.14,"objective":"Search for Tian Wen's cache near the Warehouses"},{"map":"buried-city","map_ko":"파묻힌 도시","x":2824.89,"y":6654.04,"objective":"Follow the clues"}]},{"id":"a reveal in ruins","name_en":"A Reveal In Ruins","name_ko":"폐허에서 드러난 것","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":5782.21,"y":3423.9,"objective":"Search for an ESR Analyzer inside any pharmacy in Buried City"}]},{"id":"market correction","name_en":"Market Correction","name_ko":"시장 조정","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":2836.3,"y":5565.09,"objective":"Locate the cache near Marano Station"}]},{"id":"digging up dirt","name_en":"Digging Up Dirt","name_ko":"부패 파헤치기","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":4079.3,"y":3097.33,"objective":"Locate the Santa Maria Houses in Old Town"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4199.44,"y":3027.07,"objective":"Locate the Dead Drop inside of the courtyard"}]},{"id":"the root of the matter","name_en":"The Root of the Matter","name_ko":"문제의 뿌리","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":4564.18,"y":4674.33,"objective":"Search for the seed vault in the \"room with a great view\""}]},{"id":"communication hideout","name_en":"Communication Hideout","name_ko":"비밀 통신처","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":5178.0,"y":2726.5,"objective":"Find missing battery cell"},{"map":"buried-city","map_ko":"파묻힌 도시","x":5115.51,"y":2630.64,"objective":"Install the battery cell in the Generator"},{"map":"buried-city","map_ko":"파묻힌 도시","x":5105.34,"y":2626.12,"objective":"Enable the power on the Generator"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4956.18,"y":2697.31,"objective":"Boot the antenna terminal near the Red Tower. NOTE: On the roof of the building"}]},{"id":"building a library","name_en":"Building a Library","name_ko":"도서관 건설","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":3783.0,"y":5426.5,"objective":"Find 1 detective book."},{"map":"buried-city","map_ko":"파묻힌 도시","x":3859.5,"y":5292.0,"objective":"Find 1 romance book."},{"map":"buried-city","map_ko":"파묻힌 도시","x":3608.0,"y":5285.0,"objective":"Find 1 adventure book"}]},{"id":"life of a pharmacist","name_en":"Life Of A Pharmacist","name_ko":"약사의 삶","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":5697.49,"y":3411.39,"objective":"Document the pharmacist's hobbies"},{"map":"buried-city","map_ko":"파묻힌 도시","x":5896.09,"y":3339.44,"objective":"Document the pharmacist's family"},{"map":"buried-city","map_ko":"파묻힌 도시","x":5817.01,"y":3388.79,"objective":"Document the pharmacist's skills"},{"map":"buried-city","map_ko":"파묻힌 도시","x":5798.57,"y":3437.55,"objective":"Document the pharmacist's taste"}]},{"id":"after rain comes","name_en":"After Rain Comes","name_ko":"비가 온 뒤에","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":2976.1,"y":3205.49,"objective":"Repair the solar panels using 5 Wires and 2 Batteries"}]},{"id":"eyes on the prize","name_en":"Eyes On The Prize","name_ko":"목표에 시선 고정","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":3637.27,"y":2086.3,"objective":"Rewire the solar panel using 3 Wires"}]},{"id":"espresso","name_en":"Espresso","name_ko":"에스프레소","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":4047.32,"y":2483.42,"objective":"Box of espresso parts is on the counter within the Cafe. Look for the green sign near Plaza Rosa extraction."},{"map":"buried-city","map_ko":"파묻힌 도시","x":3781.68,"y":3093.87,"objective":"Find an espresso machine to get spare parts"}]},{"id":"combat recon","name_en":"Combat Recon","name_ko":"전투 정찰","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":4032.5,"y":2345.5,"objective":"Scope out a cover spot in the attics around Main Street"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4391.84,"y":4981.03,"objective":"Scope out a cover spot in the Parking Garage staircases"},{"map":"buried-city","map_ko":"파묻힌 도시","x":3775.95,"y":4208.16,"objective":"Scope out a cover spot in the buses near Marano Park"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4049.76,"y":2842.22,"objective":"Scope out a cover spot in the attics around Main Stree"}]},{"id":"line in the sand","name_en":"Line In The Sand","name_ko":"모래 위 저지선","maps":["buried-city"],"locations":[{"map":"buried-city","map_ko":"파묻힌 도시","x":2244.0,"y":4300.0,"objective":"Find out why the train never reached Marano Station"},{"map":"buried-city","map_ko":"파묻힌 도시","x":2747.0,"y":4436.0,"objective":"Find out who orchestrated the robbery"},{"map":"buried-city","map_ko":"파묻힌 도시","x":4535.0,"y":6267.0,"objective":"Find out where the thruster valves were stashed"},{"map":"buried-city","map_ko":"파묻힌 도시","x":5362.0,"y":6547.0,"objective":"Search the basement of the merchant's nearby apartment"}]},{"id":"a first foothold","name_en":"A First Foothold","name_ko":"첫 거점","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":4574.67,"y":5888.74,"objective":"Rotate the satellite dishes on the church roof, north of the Data Vault"},{"map":"blue-gate","map_ko":"블루 게이트","x":3076.29,"y":3111.5,"objective":"Enable the comms terminal near the Olive Grove"},{"map":"blue-gate","map_ko":"블루 게이트","x":5646.32,"y":3942.21,"objective":"Stabilize the observation deck near the Ridgeline"},{"map":"blue-gate","map_ko":"블루 게이트","x":2532.14,"y":4622.95,"objective":"Nail down the roof plates on the Raider structure near Trapper's Glade"}]},{"id":"groundbreaking","name_en":"Groundbreaking","name_ko":"신기원","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":5766.46,"y":4302.91,"objective":"Find the building pictured on the whiteboard"},{"map":"blue-gate","map_ko":"블루 게이트","x":5819.49,"y":4360.9,"objective":"Photograph the abandoned housing project"},{"map":"blue-gate","map_ko":"블루 게이트","x":5823.0,"y":5631.0,"objective":"Search the room for any construction research"}]},{"id":"bees!","name_en":"Bees!","name_ko":"벌이다!","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":3352.34,"y":2820.12,"objective":"Search for bee hives around the Olive Grove"}]},{"id":"armored transports","name_en":"Armored Transports","name_ko":"장갑 수송차","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":3580.67,"y":4204.9,"objective":"Key Card from the checkpoint booth."},{"map":"blue-gate","map_ko":"블루 게이트","x":4258.8,"y":4730.59,"objective":"Find an armored car still intact (denoted by light) for the access card"}]},{"id":"reduced to rubble","name_en":"Reduced To Rubble","name_ko":"잔해로 전락한","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":2842.44,"y":3362.57,"objective":"Take a photo of the Collapsed Highway"},{"map":"blue-gate","map_ko":"블루 게이트","x":5098.94,"y":3528.98,"objective":"Investigate the unknown ARC machines"}]},{"id":"with a trace","name_en":"With A Trace","name_ko":"흔적을 따라","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":1789.2,"y":5219.92,"objective":"Find signs of who brought down the ARC machines"},{"map":"blue-gate","map_ko":"블루 게이트","x":2164.08,"y":4336.11,"objective":"Inspect the communications device"}]},{"id":"a prime specimen","name_en":"A Prime Specimen","name_ko":"최상급 표본","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":1899.29,"y":4302.91,"objective":"You need 3 power cells to do the 3-part fix: first one outer inside, second is inside, third is the top side, all have some electricity on the spots to show where it is"}]},{"id":"armored transport","name_en":"Armored Transport","name_ko":"장갑 수송차","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":4797.5,"y":5438.9,"objective":"Find an armored car still intact (denoted by light) for the access card"}]},{"id":"a dead end","name_en":"A Dead End","name_ko":"막다른 길","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":3980.0,"y":4939.0,"objective":"Find a way into the locked room in the Security Wing"},{"map":"blue-gate","map_ko":"블루 게이트","x":3925.37,"y":5007.72,"objective":"Search the locked room for any records on Project Heartwood"},{"map":"blue-gate","map_ko":"블루 게이트","x":3879.37,"y":4969.72,"objective":"Find the Dusty Film Reel"}]},{"id":"keeping an eye out","name_en":"Keeping An Eye Out","name_ko":"눈 크게 뜨기","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":1906.36,"y":3662.27,"objective":"Find Bilguun's shelter and search for any clues of his presence. NOTE: Take a zipline!"}]},{"id":"clamoring for attention","name_en":"Clamoring For Attention","name_ko":"관심 끌기","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":4793.0,"y":4873.0,"objective":"Use 3 Wires to repair and sound the emergency siren by the Warehouse Complex"},{"map":"blue-gate","map_ko":"블루 게이트","x":3804.0,"y":4532.0,"objective":"Sound any bus horn by the Checkpoint"},{"map":"blue-gate","map_ko":"블루 게이트","x":3352.0,"y":5668.5,"objective":"Use a Battery to start the boom box in the Village"}]},{"id":"outstanding balance","name_en":"Outstanding Balance","name_ko":"미정산액","maps":["blue-gate"],"locations":[{"map":"blue-gate","map_ko":"블루 게이트","x":4470.0,"y":5762.0,"objective":"Search for Dodger's stash inside the Traffic Tunnel"},{"map":"blue-gate","map_ko":"블루 게이트","x":5854.5,"y":5766.0,"objective":"Search Dodger's deal spot by the Pilgrim's Peak antenna"}]},{"id":"snap and salvage","name_en":"Snap And Salvage","name_ko":"사진 촬영 및 부품 분해","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":3990.0,"y":3031.7,"objective":"Take a Photo of any of the Rovers in the Sandbox"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5247.97,"y":5562.66,"objective":"Search the papers in the Security Checkpoint room by the Lobby"}]},{"id":"cold storage","name_en":"Cold Storage","name_ko":"냉동 보관소","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":4836.85,"y":5620.2,"objective":"Search any J Kozma Ventures container"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":2651.0,"y":2832.0,"objective":"Search any J Kozma Ventures container"}]},{"id":"with a view","name_en":"With A View","name_ko":"전망을 감상하며","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":2051.98,"y":5544.23,"objective":"Interact with a nearby computer to help identify the correct parts"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":2001.0,"y":5480.0,"objective":"Use the Rotary Encoder to activate the server switch"}]},{"id":"movie night","name_en":"Movie Night","name_ko":"영화 보는 밤","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5595.0,"y":3346.0,"objective":"On Stella Montis, search the Cultural Archives for old movie tapes"}]},{"id":"on deaf ears","name_en":"On Deaf Ears","name_ko":"가는귀먹은 사람들","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5300.3,"y":5760.07,"objective":"Find the researcher's guest logs on the reception computers"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5672.72,"y":4422.28,"objective":"Find where the researcher held their lecture, and access their notes"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":1964.34,"y":3286.09,"objective":"Find information about the prototypes on the Medical Research computers"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":2855.29,"y":6154.89,"objective":"Find the printed shipping logs in the Assembly Workshops"}]},{"id":"stable housing","name_en":"Stable Housing","name_ko":"안정적인 주거","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5586.0,"y":5290.0,"objective":"Search for the safe in the side room by the third-floor staircases"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5573.0,"y":5293.0,"objective":"Use the Access Card Printer to print a key to the safe"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5530.0,"y":5369.0,"objective":"Search for alternate ways into the safe"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5594.0,"y":5292.0,"objective":"Retreive the contents of the safe"}]},{"id":"furtive meetings","name_en":"Furtive Meetings","name_ko":"은밀한 회동","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5526.75,"y":3585.91,"objective":"Search the meeting area"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":1115.48,"y":3010.62,"objective":"Search for the secret meeting spot under a staircase in the Medical Research Area"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":4601.0,"y":2780.0,"objective":"Find the secret meeting spot near the ventilation shaft between Robotic Sandbox B and Seed Vault"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5564.93,"y":3568.23,"objective":"Find the secret meeting spot at the bottom of the staircase connecting the Cultural Archives and Seed Vault"}]},{"id":"fragmented logs","name_en":"Fragmented Logs","name_ko":"조각난 기록","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":4110.0,"y":3436.0,"objective":"In either of the Robotic Sandbox control rooms, repair the out-of-service terminal with 1 Electrical Component"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":4620.94,"y":4025.02,"objective":"Enable the power in any of the conduit backrooms near the Robotic Sandboxes"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":7352.0,"y":3743.0,"objective":"Boot the main frame data terminal in the Cultural Archives service backrooms"}]},{"id":"last entry","name_en":"Last Entry","name_ko":"마지막 기록","maps":["stella-montis"],"locations":[{"map":"stella-montis","map_ko":"스텔라 몬티스","x":6145.0,"y":2794.0,"objective":"Find and access the right work station in the Seed Vault for Clues"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":6297.5,"y":3024.0,"objective":"Search for the hidden key in the adjacent room"},{"map":"stella-montis","map_ko":"스텔라 몬티스","x":5961.11,"y":2007.21,"objective":"Search the Seed Vault and unlock the seed deposit box"}]},{"id":"battening down (3/3)","name_en":"Battening Down (3/3)","name_ko":"철저한 대비","maps":["riven-tides"],"locations":[{"map":"riven-tides","map_ko":"리븐 타이즈","x":6242.5,"y":5675.5,"objective":"Fix the leaking oil pipe in the northeast"}]},{"id":"shoring up defenses (3/4)","name_en":"Shoring Up Defenses (3/4)","name_ko":"방어선 보강","maps":["riven-tides"],"locations":[{"map":"riven-tides","map_ko":"리븐 타이즈","x":4616.52,"y":4402.08,"objective":"Use 1 ARC Alloy to reinforce the Raider Structure on top of any Stacking Yard crane"},{"map":"riven-tides","map_ko":"리븐 타이즈","x":5321.07,"y":4270.07,"objective":"Use 1 ARC Alloy to reinforce the Raider structure on top of any Stacking Yard crane * Use the crates to reach the zipline in the middle, quest will be right above once you get up"}]},{"id":"shoring up defenses (4/4)","name_en":"Shoring Up Defenses (4/4)","name_ko":"방어선 보강","maps":["riven-tides"],"locations":[{"map":"riven-tides","map_ko":"리븐 타이즈","x":2462.99,"y":3206.33,"objective":"Board up shuttered windows in the hotel"},{"map":"riven-tides","map_ko":"리븐 타이즈","x":2287.93,"y":3518.48,"objective":"Board up shuttered windows in the hotel"}]},{"id":"battening down (1/3)","name_en":"Battening Down (1/3)","name_ko":"철저한 대비","maps":["riven-tides"],"locations":[{"map":"riven-tides","map_ko":"리븐 타이즈","x":5528.87,"y":5546.01,"objective":"Photograph the cracks forming in the seawall"}]},{"id":"battening down (2/3)","name_en":"Battening Down (2/3)","name_ko":"철저한 대비","maps":["riven-tides"],"locations":[{"map":"riven-tides","map_ko":"리븐 타이즈","x":1919.67,"y":4800.79,"objective":"Sample the shoreline near the hotel beach"}]},{"id":"safe harbor (1/3)","name_en":"Safe Harbor (1/3)","name_ko":"안식의 항구","maps":["riven-tides"],"locations":[{"map":"riven-tides","map_ko":"리븐 타이즈","x":2197.01,"y":3426.5,"objective":"Find the clue left by the restaurant kitchen staff"}]},{"id":"safe harbor (2/3)","name_en":"Safe Harbor (2/3)","name_ko":"안식의 항구","maps":["riven-tides"],"locations":[{"map":"riven-tides","map_ko":"리븐 타이즈","x":1660.99,"y":2511.81,"objective":"Find the area portrayed in the sketch"}]},{"id":"safe harbor (3/3)","name_en":"Safe Harbor (3/3)","name_ko":"안식의 항구","maps":["riven-tides"],"locations":[{"map":"riven-tides","map_ko":"리븐 타이즈","x":1629.17,"y":2531.61,"objective":"Dig up the buried part"}]}]};
+const LS_KEY = 'arc_active_quests_v1';
+let active = new Set(JSON.parse(localStorage.getItem(LS_KEY)||'[]'));
+let curMap = null;
+let map=null, layer=null, markers=[];
+
+const byId = {}; DATA.quests.forEach(q=>byId[q.id]=q);
+
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify([...active])); }
+
+// ---- search / results ----
+const qInput=document.getElementById('q');
+const resultsEl=document.getElementById('results');
+function renderResults(){
+  const term=qInput.value.trim().toLowerCase();
+  let list;
+  let showActiveSection=false;
+  if(!term){
+    // show active quests first when no search
+    list = DATA.quests.filter(q=>active.has(q.id));
+    showActiveSection=true;
+  } else {
+    list = DATA.quests.filter(q=>
+      q.name_ko.toLowerCase().includes(term) ||
+      q.name_en.toLowerCase().includes(term) ||
+      q.locations.some(l=>l.objective.toLowerCase().includes(term))
+    );
+  }
+  let html='';
+  if(showActiveSection){
+    if(list.length===0){
+      html='<div class="empty">아직 진행 중인 퀘스트가 없습니다.<br>위 검색창에서 퀘스트를 찾아 체크하세요.</div>';
+    } else {
+      html='<div class="sec">진행 중 ('+list.length+')</div>';
+    }
+  }
+  for(const q of list){
+    const on=active.has(q.id);
+    const tags=q.maps.map(m=>{
+      const meta=DATA.mapMeta.maps.find(x=>x.id===m);
+      return '<span class="tag">'+(meta?meta.ko:m)+'</span>';
+    }).join('');
+    html+='<div class="qrow'+(on?' on':'')+'" data-id="'+q.id+'">'+
+      '<div class="cb">'+(on?'✓':'')+'</div>'+
+      '<div class="body"><div class="nm">'+esc(q.name_ko)+'</div>'+
+      '<div class="en">'+esc(q.name_en)+'</div>'+
+      '<div class="mp">'+tags+'</div></div></div>';
+  }
+  resultsEl.innerHTML=html;
+}
+function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+resultsEl.addEventListener('click',e=>{
+  const row=e.target.closest('.qrow'); if(!row)return;
+  const id=row.dataset.id;
+  if(active.has(id)) active.delete(id); else active.add(id);
+  save(); renderResults(); renderTabs(); 
+  // if current map no longer has active quests, or to refresh markers
+  if(curMap) drawMap(curMap);
+  updateHeader();
+});
+qInput.addEventListener('input',renderResults);
+
+// ---- tabs (maps with active quests) ----
+function activeMapsList(){
+  const counts={};
+  for(const id of active){
+    const q=byId[id]; if(!q)continue;
+    for(const m of q.maps) counts[m]=(counts[m]||0)+1;
+  }
+  // keep map order from mapMeta
+  return DATA.mapMeta.maps.filter(m=>counts[m.id]).map(m=>({...m,count:counts[m.id]}));
+}
+function renderTabs(){
+  const maps=activeMapsList();
+  const tabsEl=document.getElementById('tabs');
+  if(maps.length===0){
+    tabsEl.innerHTML=''; curMap=null;
+    document.getElementById('map').style.display='none';
+    document.getElementById('mapempty').style.display='flex';
+    return;
+  }
+  if(!curMap || !maps.find(m=>m.id===curMap)) curMap=maps[0].id;
+  tabsEl.innerHTML=maps.map(m=>
+    '<div class="tab'+(m.id===curMap?' active':'')+'" data-map="'+m.id+'">'+
+    esc(m.ko)+'<span class="b">'+m.count+'</span></div>'
+  ).join('');
+  tabsEl.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{curMap=t.dataset.map; renderTabs(); drawMap(curMap);});
+  document.getElementById('map').style.display='block';
+  document.getElementById('mapempty').style.display='none';
+  drawMap(curMap);
+}
+
+// ---- leaflet map ----
+const IMG=DATA.mapMeta.image, SIZE=DATA.mapMeta.size;
+function initMap(){
+  map=L.map('map',{crs:L.CRS.Simple,minZoom:-2,maxZoom:3,zoomControl:true,attributionControl:false});
+}
+function drawMap(mapId){
+  if(!map) initMap();
+  const meta=DATA.mapMeta.maps.find(m=>m.id===mapId);
+  const bounds=[[0,0],[IMG,IMG]];
+  if(layer) map.removeLayer(layer);
+  layer=L.imageOverlay(meta.img,bounds).addTo(map);
+  map.fitBounds(bounds);
+  markers.forEach(mk=>map.removeLayer(mk)); markers=[];
+  // place markers for active quests that have a location on this map
+  for(const id of active){
+    const q=byId[id]; if(!q)continue;
+    for(const loc of q.locations){
+      if(loc.map!==mapId) continue;
+      // coord -> image pixel. 게임 좌표 원점=왼쪽아래(y가 위로 증가).
+      // Leaflet imageOverlay [[0,0],[IMG,IMG]]도 lat 큰 값이 위(North)이므로 y를 그대로 lat으로 사용.
+      const px = loc.x / SIZE * IMG;
+      const py = loc.y / SIZE * IMG;
+      const icon=L.divIcon({className:'',html:'<div class="qmark"></div>',iconSize:[14,14],iconAnchor:[7,14]});
+      const mk=L.marker([py, px],{icon}).addTo(map);
+      mk.bindPopup('<b>'+esc(q.name_ko)+'</b><br>'+esc(loc.objective)+
+        '<span class="oen">'+esc(q.name_en)+'</span>');
+      markers.push(mk);
+    }
+  }
+}
+
+function updateHeader(){
+  document.getElementById('hdrcount').textContent='진행 중 '+active.size+'개';
+}
+
+// init
+renderResults(); renderTabs(); updateHeader();
+</script>
+</body>
+</html>
